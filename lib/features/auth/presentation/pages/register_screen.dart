@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -8,6 +9,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import '../../../../core/config/medical_theme.dart';
 import '../../../../core/config/theme_helper.dart';
 import '../../../maps/presentation/pages/location_picker_screen.dart';
+import '../../../settings/presentation/pages/static_info_pages.dart';
 //import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -1013,10 +1015,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     labelText: 'رقم الهاتف',
                     border: OutlineInputBorder(),
                   ),
-                  keyboardType: TextInputType.phone,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: const [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(9),
+                  ],
                   validator: (value) {
-                    if (value == null || value.isEmpty) {
+                    final phone = value?.trim() ?? '';
+                    if (phone.isEmpty) {
                       return 'يرجى إدخال رقم الهاتف';
+                    }
+                    if (phone.length < 9) {
+                      return 'يجب أن يتكون رقم الهاتف من 9 أرقام';
                     }
                     return null;
                   },
@@ -1321,13 +1331,47 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       onChanged: (value) => setState(() => _termsAccepted = value!),
                     ),
                     Expanded(
-                      child: GestureDetector(
-                        onTap: () {
-                          // TODO: عرض شروط الخدمة
-                        },
-                        child: const Text(
-                          'أوافق على شروط الخدمة وسياسة الخصوصية',
-                          style: TextStyle(decoration: TextDecoration.underline),
+                      child: Text.rich(
+                        TextSpan(
+                          text: 'أوافق على ',
+                          style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+                          children: [
+                            WidgetSpan(
+                              alignment: PlaceholderAlignment.middle,
+                              child: InkWell(
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (_) => const TermsOfUsePage()),
+                                ),
+                                child: Text(
+                                  'شروط الاستخدام',
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.primary,
+                                    decoration: TextDecoration.underline,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const TextSpan(text: ' و'),
+                            WidgetSpan(
+                              alignment: PlaceholderAlignment.middle,
+                              child: InkWell(
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (_) => const PrivacyPolicyPage()),
+                                ),
+                                child: Text(
+                                  'سياسة الخصوصية',
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.primary,
+                                    decoration: TextDecoration.underline,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
