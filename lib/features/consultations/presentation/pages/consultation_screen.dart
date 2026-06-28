@@ -12,6 +12,7 @@ import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
+import 'package:open_filex/open_filex.dart';
 import 'dart:convert';
 import 'dart:io';
 import '../../../../core/config/medical_theme.dart';
@@ -818,13 +819,12 @@ Future<DocumentSnapshot<Map<String, dynamic>>> _consultationDoc() =>
         return;
       }
 
-      final opened = await launchUrl(
-        Uri.file(localPath),
-        mode: LaunchMode.externalApplication,
-      );
+      final result = await OpenFilex.open(localPath);
 
-      if (!opened) {
+      if (result.type == ResultType.noAppToOpen) {
         _showErrorSnackbar('لا يوجد تطبيق مناسب لفتح هذا النوع من الملفات');
+      } else if (result.type != ResultType.done) {
+        _showErrorSnackbar('تعذر فتح الملف المرفق');
       }
     } catch (e) {
       _logError('تعذر فتح الملف المرفق: $e');
