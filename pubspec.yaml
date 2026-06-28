@@ -55,6 +55,7 @@ dependencies:
   awesome_dialog: any
   fl_chart: ^0.64.0
   file_picker: any
+  open_filex: any
   http: any
   flutter_html: any
   lottie: any

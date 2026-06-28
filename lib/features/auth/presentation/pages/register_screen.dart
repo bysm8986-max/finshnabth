@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -8,6 +9,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import '../../../../core/config/medical_theme.dart';
 import '../../../../core/config/theme_helper.dart';
 import '../../../maps/presentation/pages/location_picker_screen.dart';
+import '../../../settings/presentation/pages/static_info_pages.dart';
 //import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -98,6 +100,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _isAppleLoading = false;
   bool _isUploading = false;
   bool _isProfileUploading = false;
+  bool _isWaitingForEmailVerification = false;
+  User? _pendingEmailVerificationUser;
+  String? _pendingVerificationAccountType;
   String? _photoURL;
   String? _licenseUploadErrorMessage;
 
@@ -868,17 +873,60 @@ class _RegisterScreenState extends State<RegisterScreen> {
         licenseDocumentBase64: licenseDocumentBase64,
       );
 
+      await userCredential.user!.sendEmailVerification();
+
       if (!mounted) return;
 
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        _selectedAccountType == 'doctor' ? '/verification_pending' : '/home',
-            (route) => false,
+      setState(() {
+        _pendingEmailVerificationUser = userCredential.user;
+        _pendingVerificationAccountType = _selectedAccountType;
+        _isWaitingForEmailVerification = true;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تم إرسال رسالة تحقق إلى ${_emailController.text.trim()}'),
+        ),
       );
     } on FirebaseAuthException catch (e) {
       _handleError('auth-error', e);
     } on FirebaseException catch (e) {
       _handleError('firestore-error', e);
+    } catch (e) {
+      _handleError('general-error', e);
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _checkEmailVerification() async {
+    final user = _pendingEmailVerificationUser ?? FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      _showErrorMessage('تعذر العثور على المستخدم الحالي، يرجى تسجيل الدخول مرة أخرى');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      await user.reload();
+      final refreshedUser = FirebaseAuth.instance.currentUser;
+
+      if (refreshedUser?.emailVerified == true) {
+        if (!mounted) return;
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          (_pendingVerificationAccountType ?? _selectedAccountType) == 'doctor' ? '/verification_pending' : '/home',
+          (route) => false,
+        );
+        return;
+      }
+
+      _showErrorMessage('لم يتم التحقق من البريد الإلكتروني بعد. يرجى فتح رسالة التحقق ثم المحاولة مرة أخرى.');
+    } on FirebaseAuthException catch (e) {
+      _handleError('auth-error', e);
     } catch (e) {
       _handleError('general-error', e);
     } finally {
@@ -1013,10 +1061,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     labelText: 'رقم الهاتف',
                     border: OutlineInputBorder(),
                   ),
-                  keyboardType: TextInputType.phone,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(9),
+                  ],
                   validator: (value) {
-                    if (value == null || value.isEmpty) {
+                    final phone = value?.trim() ?? '';
+                    if (phone.isEmpty) {
                       return 'يرجى إدخال رقم الهاتف';
+                    }
+                    if (phone.length < 9) {
+                      return 'يجب أن يتكون رقم الهاتف من 9 أرقام';
                     }
                     return null;
                   },
@@ -1321,29 +1377,83 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       onChanged: (value) => setState(() => _termsAccepted = value!),
                     ),
                     Expanded(
-                      child: GestureDetector(
-                        onTap: () {
-                          // TODO: عرض شروط الخدمة
-                        },
-                        child: const Text(
-                          'أوافق على شروط الخدمة وسياسة الخصوصية',
-                          style: TextStyle(decoration: TextDecoration.underline),
+                      child: Text.rich(
+                        TextSpan(
+                          text: 'أوافق على ',
+                          style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+                          children: [
+                            WidgetSpan(
+                              alignment: PlaceholderAlignment.middle,
+                              child: InkWell(
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (_) => const TermsOfUsePage()),
+                                ),
+                                child: Text(
+                                  'شروط الاستخدام',
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.primary,
+                                    decoration: TextDecoration.underline,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const TextSpan(text: ' و'),
+                            WidgetSpan(
+                              alignment: PlaceholderAlignment.middle,
+                              child: InkWell(
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (_) => const PrivacyPolicyPage()),
+                                ),
+                                child: Text(
+                                  'سياسة الخصوصية',
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.primary,
+                                    decoration: TextDecoration.underline,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   ],
                 ),
+                if (_isWaitingForEmailVerification) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.primary.withOpacity(0.25),
+                      ),
+                    ),
+                    child: Text(
+                      'تم إرسال رسالة تحقق إلى بريدك الإلكتروني. افتح الرابط الموجود في الرسالة، ثم اضغط على زر "لقد قمت بالتحقق" للمتابعة.',
+                      style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _isLoading ? null : _register,
+                    onPressed: _isLoading
+                        ? null
+                        : (_isWaitingForEmailVerification ? _checkEmailVerification : _register),
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                     ),
                     child: _isLoading
                         ? const CircularProgressIndicator()
-                        : const Text('إنشاء حساب'),
+                        : Text(_isWaitingForEmailVerification ? 'لقد قمت بالتحقق' : 'إنشاء حساب'),
                   ),
                 ),
                 const SizedBox(height: 8),
