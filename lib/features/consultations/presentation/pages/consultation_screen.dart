@@ -740,6 +740,98 @@ Future<DocumentSnapshot<Map<String, dynamic>>> _consultationDoc() =>
     _inlineAudioFiles[messageId] = path;
     return path;
   }
+  String _safeAttachmentFileName(String messageId, String? originalName) {
+    final fallbackName = 'attachment_$messageId';
+    final rawName = (originalName == null || originalName.trim().isEmpty)
+        ? fallbackName
+        : originalName.trim();
+    final safeName = rawName.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    return safeName.isEmpty ? fallbackName : safeName;
+  }
+
+  Future<String?> _downloadRemoteAttachmentToFile({
+    required String messageId,
+    required String fileUrl,
+    required String? originalName,
+  }) async {
+    try {
+      final uri = Uri.tryParse(fileUrl);
+      if (uri == null || !uri.hasScheme) return null;
+
+      final response = await http.get(uri);
+      if (response.statusCode < 200 || response.statusCode >= 300) return null;
+
+      final safeName = _safeAttachmentFileName(messageId, originalName);
+      final path = '${Directory.systemTemp.path}/remote_${messageId}_$safeName';
+      final file = File(path);
+      await file.writeAsBytes(response.bodyBytes, flush: true);
+      return path;
+    } catch (e) {
+      _logError('تعذر تحميل الملف المرفق: $e');
+      return null;
+    }
+  }
+
+  Future<String?> _createInlineAttachmentFile({
+    required String messageId,
+    required String base64Data,
+    required String? originalName,
+  }) async {
+    try {
+      final bytes = base64Decode(base64Data);
+      final safeName = _safeAttachmentFileName(messageId, originalName);
+      final path = '${Directory.systemTemp.path}/inline_${messageId}_$safeName';
+      final file = File(path);
+      await file.writeAsBytes(bytes, flush: true);
+      return path;
+    } catch (e) {
+      _logError('تعذر تجهيز الملف المرفق: $e');
+      return null;
+    }
+  }
+
+  Future<void> _openAttachmentFile({
+    required String messageId,
+    required String? fileUrl,
+    required String? inlineFileBase64,
+    required String? originalName,
+  }) async {
+    try {
+      String? localPath;
+
+      if (fileUrl != null && fileUrl.trim().isNotEmpty) {
+        localPath = await _downloadRemoteAttachmentToFile(
+          messageId: messageId,
+          fileUrl: fileUrl.trim(),
+          originalName: originalName,
+        );
+      } else if (inlineFileBase64 != null && inlineFileBase64.isNotEmpty) {
+        localPath = await _createInlineAttachmentFile(
+          messageId: messageId,
+          base64Data: inlineFileBase64,
+          originalName: originalName,
+        );
+      }
+
+      if (localPath == null || !await File(localPath).exists()) {
+        _showErrorSnackbar('تعذر العثور على الملف أو تحميله');
+        return;
+      }
+
+      final opened = await launchUrl(
+        Uri.file(localPath),
+        mode: LaunchMode.externalApplication,
+      );
+
+      if (!opened) {
+        _showErrorSnackbar('لا يوجد تطبيق مناسب لفتح هذا النوع من الملفات');
+      }
+    } catch (e) {
+      _logError('تعذر فتح الملف المرفق: $e');
+      _showErrorSnackbar('تعذر فتح الملف المرفق');
+    }
+  }
+
   Future<String?> _uploadFile() async {
     if (_cloudStorageBlocked) return null;
 
@@ -1694,13 +1786,12 @@ Future<DocumentSnapshot<Map<String, dynamic>>> _consultationDoc() =>
       } else if (type == 'file' || type == 'file_inline') {
         contentWidgets.add(
           InkWell(
-            onTap: () async {
-              if (fileUrl != null && fileUrl.isNotEmpty) {
-                await launchUrl(Uri.parse(fileUrl));
-              } else {
-                _showErrorSnackbar('الملف مخزن محلياً داخل الرسالة');
-              }
-            },
+            onTap: () => _openAttachmentFile(
+              messageId: doc.id,
+              fileUrl: fileUrl,
+              inlineFileBase64: inlineFileBase64,
+              originalName: fileName,
+            ),
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(

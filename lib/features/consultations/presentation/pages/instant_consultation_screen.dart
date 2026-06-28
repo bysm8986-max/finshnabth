@@ -355,11 +355,13 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
                 builder: (context, snapshot) {
                   String? userPhoto = consultation.userImage;
                   String userName = consultation.userName ?? 'مريض';
+                  String? userGender;
 
                   if (snapshot.hasData && snapshot.data!.exists) {
                     final userData = snapshot.data!.data() as Map<String, dynamic>;
                     userPhoto = userData['photoURL'] ?? userPhoto;
                     userName = userData['fullName'] ?? userName;
+                    userGender = userData['gender']?.toString();
                   } else if (snapshot.hasError) {
                     print('❌ [تشخيص] خطأ في تحميل بيانات المستخدم: ${snapshot.error}');
                   }
@@ -372,6 +374,7 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
                     hasNewMessages: hasNewMessages,
                     currentUserId: doctor.uid,
                     isDoctor: true,
+                    avatarGender: userGender,
                   );
                 },
               );
@@ -441,11 +444,13 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
               builder: (context, snapshot) {
                 String? doctorPhoto = consultation.doctorImage;
                 String doctorName = consultation.doctorName ?? 'طبيب';
+                String? doctorGender;
 
                 if (snapshot.hasData && snapshot.data!.exists) {
                   final doctorData = snapshot.data!.data() as Map<String, dynamic>;
                   doctorPhoto = doctorData['photoURL'] ?? doctorPhoto;
                   doctorName = doctorData['fullName'] ?? doctorName;
+                  doctorGender = doctorData['gender']?.toString();
                 }
 
                 return _buildConsultationItem(
@@ -456,6 +461,7 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
                   hasNewMessages: hasNewMessages,
                   currentUserId: user.uid,
                   isDoctor: false,
+                  avatarGender: doctorGender,
                 );
               },
             );
@@ -475,6 +481,7 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
     required bool hasNewMessages,
     required String currentUserId,
     required bool isDoctor,
+    String? avatarGender,
   }) {
     // استخدام StreamBuilder للحصول على العدد المحدث
     return StreamBuilder<int>(
@@ -483,12 +490,23 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
         final actualUnreadCount = countSnapshot.data ?? unreadCount;
         final shouldShowBadge = actualUnreadCount > 0 || hasNewMessages;
 
-        return ListTile(
+        final theme = Theme.of(context);
+        final colorScheme = theme.colorScheme;
+        return Card(
+          color: theme.cardColor,
+          elevation: 0,
+          margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: theme.dividerColor.withOpacity(0.25)),
+          ),
+          child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           leading: Stack(
             children: [
               CircleAvatar(
                 radius: 30,
-                backgroundImage: DoctorImageUtils.imageProvider(imageUrl: userPhoto),
+                backgroundImage: DoctorImageUtils.imageProvider(imageUrl: userPhoto, gender: avatarGender),
               ),
               if (shouldShowBadge)
                 Positioned(
@@ -515,7 +533,7 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
           ),
           title: Row(
             children: [
-              Expanded(child: Text(userName)),
+              Expanded(child: Text(userName, style: TextStyle(color: colorScheme.onSurface, fontWeight: FontWeight.w700))),
               // if (actualUnreadCount > 0)
               //   Container(
               //     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -537,7 +555,7 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
           subtitle: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(consultation.specialty ?? ''),
+              Text(consultation.specialty ?? '', style: TextStyle(color: colorScheme.onSurface.withOpacity(0.68))),
               if (actualUnreadCount > 0)
                 Text(
                   '$actualUnreadCount رسالة جديدة',
@@ -557,11 +575,12 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
                 ),
             ],
           ),
-          trailing: const Icon(Icons.chat),
+          trailing: Icon(Icons.chat, color: colorScheme.primary),
           onTap: () {
             _openConsultation(consultation, currentUserId);
           },
           onLongPress: () => _showConsultationActions(consultation, userName),
+        ),
         );
       },
     );
